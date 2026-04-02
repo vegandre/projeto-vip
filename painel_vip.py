@@ -6,8 +6,9 @@ from datetime import date
 # Configuração da Página
 st.set_page_config(page_title="Painel VIP - Gestão de Apostas", layout="wide")
 
-# --- DEFINIÇÃO DA SENHA ---
+# --- CONFIGURAÇÕES DO GRUPO ---
 SENHA_ADMIN = "vip123" 
+BANCA_INICIAL = 1000.00  # Valor base para o cálculo de %
 
 # --- DATABASE SIMULADA ---
 DB_FILE = "historico_apostas.csv"
@@ -20,7 +21,6 @@ def carregar_dados():
     try:
         df = pd.read_csv(DB_FILE)
         if not df.empty:
-            # Garante que o gráfico ordene corretamente convertendo para data real
             df['Data_Ord'] = pd.to_datetime(df['Data'], format='%d/%m/%Y')
             df = df.sort_values(by='Data_Ord')
         return df
@@ -42,9 +42,7 @@ senha_inserida = st.sidebar.text_input("Introduza a senha para editar", type="pa
 if senha_inserida == SENHA_ADMIN:
     st.sidebar.success("Acesso Autorizado")
     with st.sidebar.form("formulario_aposta"):
-        # AJUSTE AQUI: Adicionado format="DD/MM/YYYY" para o calendário
         data_sel = st.date_input("Data da Aposta", value=date.today(), format="DD/MM/YYYY")
-        
         equipas = st.text_input("Equipas (Ex: Flamengo vs Palmeiras)")
         metodo = st.selectbox("Método", ["Dutching", "Lay Goleada", "Handicap", "Over a frente", "Over limite"])
         resultado = st.selectbox("Resultado", ["Green ✅", "Red ❌", "Reembolsada 🔄"])
@@ -54,7 +52,6 @@ if senha_inserida == SENHA_ADMIN:
 
     if submetido:
         data_formatada = data_sel.strftime("%d/%m/%Y")
-        
         nova_aposta = {
             "Data": data_formatada,
             "Equipas": equipas,
@@ -71,21 +68,24 @@ df_atual = carregar_dados()
 
 if not df_atual.empty:
     total_lucro = df_atual["Lucro/Prejuízo"].sum()
+    lucro_percentual = (total_lucro / BANCA_INICIAL) * 100
     wins = len(df_atual[df_atual["Resultado"] == "Green ✅"])
     taxa_acerto = (wins / len(df_atual)) * 100
 
-    m1, m2, m3 = st.columns(3)
+    # Criamos 4 colunas para as métricas
+    m1, m2, m3, m4 = st.columns(4)
     m1.metric("Lucro Total", f"R$ {total_lucro:.2f}")
-    m2.metric("Total de Entradas", len(df_atual))
-    m3.metric("Taxa de Acerto", f"{taxa_acerto:.1f}%")
+    m2.metric("Crescimento %", f"{lucro_percentual:.2f}%", delta=f"{lucro_percentual:.2f}%")
+    m3.metric("Total de Entradas", len(df_atual))
+    m4.metric("Taxa de Acerto", f"{taxa_acerto:.1f}%")
 
-    st.subheader("📈 Gráfico de Evolução da Banca")
+    st.subheader("📈 Evolução da Banca (R$)")
     df_atual["Evolução"] = df_atual["Lucro/Prejuízo"].cumsum()
     st.line_chart(df_atual.set_index("Data")["Evolução"])
 
     st.subheader("📜 Histórico de Tips")
-    # Mostra a tabela com a data brasileira e invertida (mais recente primeiro)
     exibir_df = df_atual[["Data", "Equipas", "Método", "Resultado", "Lucro/Prejuízo"]].copy()
+    # Inverte para mostrar a mais recente primeiro
     st.dataframe(exibir_df.iloc[::-1], use_container_width=True, hide_index=True)
 else:
-    st.info("Aguardando o registo das primeiras apostas.")
+    st.info("Aguardando o registo das primeiras apostas para calcular o lucro.")
