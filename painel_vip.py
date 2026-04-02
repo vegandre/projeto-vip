@@ -17,12 +17,15 @@ if not os.path.exists(DB_FILE):
     df_init.to_csv(DB_FILE, index=False)
 
 def carregar_dados():
-    df = pd.read_csv(DB_FILE)
-    # Converter a coluna Data de texto para formato de data real para o gráfico funcionar
-    if not df.empty:
-        df['Data_Ord'] = pd.to_datetime(df['Data'], format='%d/%m/%Y')
-        df = df.sort_values(by='Data_Ord')
-    return df
+    try:
+        df = pd.read_csv(DB_FILE)
+        if not df.empty:
+            # Garante que o gráfico ordene corretamente convertendo para data real
+            df['Data_Ord'] = pd.to_datetime(df['Data'], format='%d/%m/%Y')
+            df = df.sort_values(by='Data_Ord')
+        return df
+    except:
+        return pd.DataFrame(columns=["Data", "Equipas", "Método", "Resultado", "Lucro/Prejuízo"])
 
 def salvar_dado(nova_linha):
     df = pd.read_csv(DB_FILE)
@@ -39,7 +42,9 @@ senha_inserida = st.sidebar.text_input("Introduza a senha para editar", type="pa
 if senha_inserida == SENHA_ADMIN:
     st.sidebar.success("Acesso Autorizado")
     with st.sidebar.form("formulario_aposta"):
-        data_sel = st.date_input("Data", date.today())
+        # AJUSTE AQUI: Adicionado format="DD/MM/YYYY" para o calendário
+        data_sel = st.date_input("Data da Aposta", value=date.today(), format="DD/MM/YYYY")
+        
         equipas = st.text_input("Equipas (Ex: Flamengo vs Palmeiras)")
         metodo = st.selectbox("Método", ["Dutching", "Lay Goleada", "Handicap", "Over a frente", "Over limite"])
         resultado = st.selectbox("Resultado", ["Green ✅", "Red ❌", "Reembolsada 🔄"])
@@ -48,7 +53,6 @@ if senha_inserida == SENHA_ADMIN:
         submetido = st.form_submit_button("Registar Aposta")
 
     if submetido:
-        # AQUI É ONDE FORMATAMOS PARA O PADRÃO BRASILEIRO
         data_formatada = data_sel.strftime("%d/%m/%Y")
         
         nova_aposta = {
@@ -59,7 +63,7 @@ if senha_inserida == SENHA_ADMIN:
             "Lucro/Prejuízo": valor
         }
         salvar_dado(nova_aposta)
-        st.sidebar.success(f"Aposta de {data_formatada} guardada!")
+        st.sidebar.success(f"Registo de {data_formatada} concluído!")
         st.rerun()
 
 # --- VISUALIZAÇÃO DOS MEMBROS (PÚBLICA) ---
@@ -77,12 +81,11 @@ if not df_atual.empty:
 
     st.subheader("📈 Gráfico de Evolução da Banca")
     df_atual["Evolução"] = df_atual["Lucro/Prejuízo"].cumsum()
-    
-    # Usamos a data formatada no eixo X do gráfico
     st.line_chart(df_atual.set_index("Data")["Evolução"])
 
     st.subheader("📜 Histórico de Tips")
-    # Mostramos a tabela (sem a coluna auxiliar de ordenação)
-    st.dataframe(df_atual[["Data", "Equipas", "Método", "Resultado", "Lucro/Prejuízo"]].iloc[::-1], use_container_width=True)
+    # Mostra a tabela com a data brasileira e invertida (mais recente primeiro)
+    exibir_df = df_atual[["Data", "Equipas", "Método", "Resultado", "Lucro/Prejuízo"]].copy()
+    st.dataframe(exibir_df.iloc[::-1], use_container_width=True, hide_index=True)
 else:
     st.info("Aguardando o registo das primeiras apostas.")
