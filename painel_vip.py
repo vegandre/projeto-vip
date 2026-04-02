@@ -11,7 +11,7 @@ SENHA_ADMIN = "vip123"
 BANCA_INICIAL = 1000.00 
 DB_FILE = "historico_apostas.csv"
 
-# 2. FUNÇÕES DE DADOS (BANCO DE DADOS EM CSV)
+# 2. FUNÇÕES DE DADOS
 def inicializar_db():
     if not os.path.exists(DB_FILE):
         df_init = pd.DataFrame(columns=["Data", "Equipas", "Método", "Resultado", "Lucro/Prejuízo"])
@@ -19,10 +19,8 @@ def inicializar_db():
 
 def carregar_dados():
     try:
-        # Lemos com sep=";" para compatibilidade total com Excel
         df = pd.read_csv(DB_FILE, sep=";", encoding="utf-8-sig")
         if not df.empty:
-            # Criamos uma coluna temporária para ordenar por data real
             df['Data_Ord'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce')
             df = df.sort_values(by='Data_Ord')
         return df
@@ -30,10 +28,8 @@ def carregar_dados():
         return pd.DataFrame(columns=["Data", "Equipas", "Método", "Resultado", "Lucro/Prejuízo"])
 
 def salvar_dados_completos(df_novo):
-    # Salva o DataFrame inteiro (usado na edição/exclusão)
     df_novo.to_csv(DB_FILE, index=False, sep=";", encoding="utf-8-sig")
 
-# Inicializa o ficheiro se não existir
 inicializar_db()
 
 # 3. INTERFACE PRINCIPAL
@@ -46,17 +42,15 @@ senha_inserida = st.sidebar.text_input("Introduza a senha para gerir", type="pas
 
 if senha_inserida == SENHA_ADMIN:
     st.sidebar.success("Acesso Autorizado")
-    
-    # Abas dentro da lateral para organizar as funções de admin
     aba_add, aba_edit = st.sidebar.tabs(["➕ Adicionar", "✏️ Editar/Excluir"])
 
     with aba_add:
         with st.form("form_nova_aposta", clear_on_submit=True):
             data_sel = st.date_input("Data da Aposta", value=date.today(), format="DD/MM/YYYY")
-            equipas = st.text_input("Equipas (Ex: Real Madrid x City)")
+            equipas = st.text_input("Equipas (Ex: Flamengo x Vasco)")
             metodo = st.selectbox("Método", ["Dutching", "Lay Goleada", "Handicap", "Over a frente", "Over limite"])
             resultado = st.selectbox("Resultado", ["Green ✅", "Red ❌", "Reembolsada 🔄"])
-            valor = st.number_input("Lucro/Prejuízo Líquido (R$)", value=0.0, step=1.0)
+            valor = st.number_input("Lucro/Prejuízo (R$)", value=0.0, step=0.01) # Permitir centavos
             
             if st.form_submit_button("Registar Aposta"):
                 if equipas:
@@ -70,56 +64,52 @@ if senha_inserida == SENHA_ADMIN:
                     df_atual = pd.read_csv(DB_FILE, sep=";", encoding="utf-8-sig")
                     df_novo = pd.concat([df_atual, pd.DataFrame([nova_linha])], ignore_index=True)
                     salvar_dados_completos(df_novo)
-                    st.sidebar.success("Aposta registada!")
+                    st.sidebar.success("Aposta registrada!")
                     st.rerun()
-                else:
-                    st.error("Preencha o nome das equipas!")
 
     with aba_edit:
         st.write("Modifique as células ou apague linhas:")
         df_para_editar = pd.read_csv(DB_FILE, sep=";", encoding="utf-8-sig")
-        # O data_editor permite editar como uma planilha
         df_editado = st.data_editor(df_para_editar, num_rows="dynamic", hide_index=True)
-        
         if st.button("Confirmar Alterações"):
             salvar_dados_completos(df_editado)
-            st.success("Dados atualizados com sucesso!")
+            st.success("Dados atualizados!")
             st.rerun()
 
-elif senha_inserida != "":
-    st.sidebar.error("Senha Incorreta")
-
-# 4. VISUALIZAÇÃO PÚBLICA (O QUE O CLIENTE VÊ)
+# 4. VISUALIZAÇÃO PÚBLICA
 df_dados = carregar_dados()
 
 if not df_dados.empty:
-    # Cálculos de Métricas
     total_lucro = df_dados["Lucro/Prejuízo"].sum()
     lucro_percentual = (total_lucro / BANCA_INICIAL) * 100
     wins = len(df_dados[df_dados["Resultado"] == "Green ✅"])
     taxa_acerto = (wins / len(df_dados)) * 100
 
-    # Exibição de Métricas em Colunas
+    # FORMATANDO PARA MOSTRAR AO CLIENTE
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Lucro Total", f"R$ {total_lucro:.2f}")
+    # Formato brasileiro: R$ 1.234,56
+    m1.metric("Lucro Total", f"R$ {total_lucro:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
     m2.metric("Crescimento %", f"{lucro_percentual:.2f}%", delta=f"{lucro_percentual:.2f}%")
     m3.metric("Total de Entradas", len(df_dados))
     m4.metric("Taxa de Acerto", f"{taxa_acerto:.1f}%")
 
-    # Gráfico de Evolução
     st.subheader("📈 Evolução da Banca (R$)")
     df_dados["Evolução"] = df_dados["Lucro/Prejuízo"].cumsum()
     st.line_chart(df_dados.set_index("Data")["Evolução"])
 
-    # Tabela de Histórico
     st.subheader("📜 Histórico de Tips")
-    # Invertemos a ordem para mostrar a mais recente primeiro na tabela
-    colunas_exibir = ["Data", "Equipas", "Método", "Resultado", "Lucro/Prejuízo"]
-    st.dataframe(df_dados[colunas_exibir].iloc[::-1], use_container_width=True, hide_index=True)
+    
+    # Criamos uma cópia para formatar a exibição sem estragar o cálculo
+    df_exibicao = df_dados[["Data", "Equipas", "Método", "Resultado", "Lucro/Prejuízo"]].iloc[::-1].copy()
+    
+    # FORMATANDO A COLUNA DE DINHEIRO NA TABELA
+    # Isso coloca o R$ e ajusta vírgulas e pontos
+    df_exibicao["Lucro/Prejuízo"] = df_exibicao["Lucro/Prejuízo"].map("R$ {:,.2f}".format).str.replace(",", "X").str.replace(".", ",").str.replace("X", ".")
 
-    # BOTÃO DE BACKUP PROFISSIONAL (CORRIGIDO PARA EXCEL)
+    st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
+
     st.markdown("---")
-    csv_excel = df_dados[colunas_exibir].to_csv(index=False, sep=";", encoding="utf-8-sig").encode('utf-8-sig')
+    csv_excel = df_dados[["Data", "Equipas", "Método", "Resultado", "Lucro/Prejuízo"]].to_csv(index=False, sep=";", encoding="utf-8-sig").encode('utf-8-sig')
     st.download_button(
         label="📥 Baixar Backup para Excel (.csv)",
         data=csv_excel,
@@ -127,4 +117,4 @@ if not df_dados.empty:
         mime="text/csv",
     )
 else:
-    st.info("📊 O histórico está vazio. O administrador precisa de registar as primeiras apostas.")
+    st.info("📊 O histórico está vazio.")
